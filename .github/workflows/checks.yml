@@ -1,0 +1,14 @@
+name: Check title studio
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify layout rules, font assets and catalogs
+        run: node --test tests/*.test.mjs
