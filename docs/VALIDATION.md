@@ -16,3 +16,9 @@ Application commit: `c31ddffedaeda953e96ac46ca111628af3e14130`.
 The screenshot is from the deployed application, with the default example title and no private cover image.
 
 ![Deployed title studio](preview.jpg)
+
+## Opaque frame interiors
+
+The frame now has an opaque white interior by default, including projects saved before this setting existed. Its fill color can be changed in the Frame tab, restored to white, or set to the current palette's theme color. Canvas outside the frame remains transparent; text-only exports and hidden frames omit the fill.
+
+All 10 Node tests passed. Browser checks also passed for all five frame shapes: selected RGB color and alpha 255 at the interior, alpha 0 outside, matching preview and decoded PNG pixels. Existing font, layout, material, theme and export checks remained green.

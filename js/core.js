@@ -2,7 +2,7 @@ import {THEMES,PALETTES,MATERIALS,SHAPES} from './catalog.js';
 export const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 export const clone=v=>JSON.parse(JSON.stringify(v));
 export const uniqueId=()=>globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-export const DEFAULT_STATE={version:1,theme:'princess',palette:'royal',material:'gold',customColor:null,outlineColor:'#62402a',rainbow:false,depth:12,stroke:2,shadow:8,shine:60,direction:'se',frameEnabled:true,frameShape:'ornate',decor:100,inset:16,seed:1234,blockGap:20,fitText:true,width:1800,height:700,exportScale:2,exportLayers:'both',trim:true,padding:28,locks:{font:false,color:false,frame:false,material:false},blocks:[{text:'მარიამის\nჯადოსნური თავგადასავალი',fontId:'gl-kupiura-bold',fontSize:158,lineMode:'manual',align:'center',letterSpacing:0,lineHeight:1.2,enabled:true},{text:'La aventura mágica de Mariam',fontId:'gl-parizuli-bold',fontSize:76,lineMode:'auto',align:'center',letterSpacing:0,lineHeight:1.2,enabled:false}]};
+export const DEFAULT_STATE={version:1,theme:'princess',palette:'royal',material:'gold',customColor:null,outlineColor:'#62402a',rainbow:false,depth:12,stroke:2,shadow:8,shine:60,direction:'se',frameEnabled:true,frameFillColor:'#ffffff',frameShape:'ornate',decor:100,inset:16,seed:1234,blockGap:20,fitText:true,width:1800,height:700,exportScale:2,exportLayers:'both',trim:true,padding:28,locks:{font:false,color:false,frame:false,material:false},blocks:[{text:'მარიამის\nჯადოსნური თავგადასავალი',fontId:'gl-kupiura-bold',fontSize:158,lineMode:'manual',align:'center',letterSpacing:0,lineHeight:1.2,enabled:true},{text:'La aventura mágica de Mariam',fontId:'gl-parizuli-bold',fontSize:76,lineMode:'auto',align:'center',letterSpacing:0,lineHeight:1.2,enabled:false}]};
 const num=(v,d,min,max)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,min,max):d;
 const bool=(v,d)=>typeof v==='boolean'?v:d;
 const choice=(v,allowed,d)=>allowed.includes(v)?v:d;
@@ -16,6 +16,7 @@ export function sanitizeState(raw={},fontIds=null){
  s.width=Math.round(s.width);s.height=Math.round(s.height);
  for(const k of ['rainbow','frameEnabled','fitText','trim'])s[k]=bool(raw[k],s[k]);
  s.customColor=color(raw.customColor);s.outlineColor=color(raw.outlineColor)||s.outlineColor;
+ s.frameFillColor=color(raw.frameFillColor)||s.frameFillColor;
  for(const k of Object.keys(s.locks))s.locks[k]=bool(raw.locks?.[k],false);
  s.blocks=s.blocks.map((def,i)=>{const b=raw.blocks?.[i]||{};return {...def,text:typeof b.text==='string'?b.text.slice(0,500):def.text,fontId:typeof b.fontId==='string'&&(!fontIds||fontIds.has(b.fontId))?b.fontId:def.fontId,fontSize:num(b.fontSize,def.fontSize,40,260),lineMode:choice(b.lineMode,['auto','1','2','3','manual'],'auto'),align:choice(b.align,['center','left','right'],'center'),letterSpacing:num(b.letterSpacing,0,-3,12),lineHeight:num(b.lineHeight,1.2,1,1.8),enabled:i===0?true:bool(b.enabled,false)};});
  return s;
