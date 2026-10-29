@@ -22,3 +22,16 @@ The screenshot is from the deployed application, with the default example title 
 The frame now has an opaque white interior by default, including projects saved before this setting existed. Its fill color can be changed in the Frame tab, restored to white, or set to the current palette's theme color. Canvas outside the frame remains transparent; text-only exports and hidden frames omit the fill.
 
 All 10 Node tests passed. Browser checks also passed for all five frame shapes: selected RGB color and alpha 255 at the interior, alpha 0 outside, matching preview and decoded PNG pixels. Existing font, layout, material, theme and export checks remained green.
+
+
+## Themed frame backgrounds
+
+Six illustrated background styles (cosmic, royal, forest, pearl, football and racing), plus gradient and solid, now use the same Canvas renderer for the preview, thumbnails and PNG. All 30 themes select a suitable background automatically. Two colors, ornament intensity, three palette variants per illustrated style and an independent seed are persisted in project state. A background-only shuffle preserves title and frame settings; the background lock is respected by combination shuffle, theme changes and presets.
+
+- All 15 Node tests passed, including old-project migration, import sanitization, project serialization, all-theme mappings, background-only mutation boundaries and theme locking.
+- Full browser rendering checks passed: all 86 fonts, text layout, 30 frame themes, 25 materials, alpha crop, plus every one of 8 background styles in all 5 shapes. Decoded PNG colors match the preview; interiors are opaque and exterior corners transparent.
+- Repeated renders preserve ornament positions. Zero intensity removes ornaments; both custom colors affect the image. Text-only exports and hidden frames omit backgrounds.
+- UI checks covered theme selection, background-only shuffle, two custom colors, undo/redo, background locking during a general shuffle, and persistence after reload.
+- The new controls were exercised at 320 and 390 px iframe widths, with no horizontal overflow. The theme thumbnail grid can be expanded on demand to keep background controls easy to reach.
+
+Canva paste and physical mobile devices were not retested for this change.

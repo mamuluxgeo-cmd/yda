@@ -1,3 +1,4 @@
+import {BACKGROUNDS} from '../js/backgrounds.js';
 import {FontManager} from '../js/fonts.js';
 import {render,makeExport} from '../js/render.js';
 import {DEFAULT_STATE,clone,alphaBounds} from '../js/core.js';
@@ -15,8 +16,28 @@ document.getElementById('run').onclick=async()=>{out.textContent='';status.textC
  s.frameEnabled=false;s.blocks[0].text='მარიამი ღ ლ';s.blocks[0].lineMode='1';const materials=new Map();for(const m of MATERIALS){s.material=m.id;const r=await render(s,fm);const hash=fingerprint(r.canvas);assert(!materials.has(hash),m.id+' duplicates '+materials.get(hash));materials.set(hash,m.id);}log('PASS all 25 materials render different pixels.');
  s=clone(DEFAULT_STATE);s.width=900;s.height=350;s.exportScale=2;s.trim=true;s.padding=20;for(const layers of ['both','text','frame']){s.exportLayers=layers;const r=await makeExport(s,fm);assert(r.blob.type==='image/png','not PNG');const bitmap=await createImageBitmap(r.blob);const c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;c.getContext('2d').drawImage(bitmap,0,0);const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;const bounds=alphaBounds(data,c.width,c.height);assert(bounds&&bounds.width>10,'empty image');assert(data[3]===0&&data[data.length-1]===0,'background is not transparent');assert(bounds.x===40&&bounds.y===40,'crop padding is incorrect');if(layers==='both')document.getElementById('sample').replaceChildren(c);bitmap.close();log(`PASS ${layers} export: ${r.width}×${r.height}, ${r.blob.size} bytes, true alpha and exact padding.`);}
 
- s=clone(DEFAULT_STATE);s.width=900;s.height=350;s.exportScale=1;s.trim=false;s.exportLayers='frame';s.frameFillColor='#123456';
+ s=clone(DEFAULT_STATE);s.width=900;s.height=350;s.exportScale=1;s.trim=false;s.exportLayers='frame';s.frameFillColor='#123456';s.frameBackground='solid';
  for(const shape of SHAPES){s.frameShape=shape;const frame=await render(s,fm,{layers:'frame'});const ctx=frame.canvas.getContext('2d');assert([...ctx.getImageData(450,175,1,1).data].join(',')==='18,52,86,255',shape+': preview interior must be opaque and use selected color');assert(ctx.getImageData(0,0,1,1).data[3]===0,shape+': outer area must stay transparent');const result=await makeExport(s,fm);const bitmap=await createImageBitmap(result.blob);const c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;const ec=c.getContext('2d');ec.drawImage(bitmap,0,0);assert([...ec.getImageData(450,175,1,1).data].join(',')==='18,52,86,255',shape+': PNG interior lost its color');assert(ec.getImageData(0,0,1,1).data[3]===0,shape+': PNG outer area is opaque');bitmap.close();}
  s.blocks[0].text='';s.blocks[1].enabled=false;const textOnly=await render(s,fm,{layers:'text'});assert(textOnly.canvas.getContext('2d').getImageData(450,175,1,1).data[3]===0,'text-only output must exclude the frame fill');s.frameEnabled=false;const withoutFrame=await render(s,fm);assert(withoutFrame.canvas.getContext('2d').getImageData(450,175,1,1).data[3]===0,'hidden frames must not leave a fill');log('PASS all 5 shapes: opaque custom interior in preview and PNG, transparent exterior, no fill in text-only or hidden-frame output.');
+
+ s=clone(DEFAULT_STATE);s.width=900;s.height=350;s.exportScale=1;s.trim=false;s.exportLayers='frame';
+ const backgrounds=new Set();
+ for(const style of BACKGROUNDS.filter(b=>b.id!=='auto')){
+   s.frameBackground=style.id;
+   for(const shape of SHAPES){
+     s.frameShape=shape;const r=await render(s,fm,{layers:'frame'}),rc=r.canvas.getContext('2d');
+     assert(rc.getImageData(450,175,1,1).data[3]===255,style.id+'/'+shape+': nonopaque center');
+     assert(rc.getImageData(0,0,1,1).data[3]===0,style.id+'/'+shape+': background leaks beyond frame');
+     if(shape==='ornate')backgrounds.add(fingerprint(r.canvas));
+     const exp=await makeExport(s,fm),bitmap=await createImageBitmap(exp.blob),c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;const ec=c.getContext('2d');ec.drawImage(bitmap,0,0);bitmap.close();
+     for(const [x,y] of [[450,175],[300,120],[600,230]])assert([...ec.getImageData(x,y,1,1).data].join(',')===[...rc.getImageData(x,y,1,1).data].join(','),style.id+'/'+shape+': PNG differs from preview');
+     assert(ec.getImageData(0,0,1,1).data[3]===0,style.id+'/'+shape+': exported exterior not transparent');
+   }
+ }
+ assert(backgrounds.size===8,'background styles are not distinct');log('PASS all 8 background styles × 5 shapes: opaque centers, transparent exteriors and matching PNG colors.');
+ s.frameBackground='cosmic';s.frameShape='shield';s.framePattern=75;const decorated=await render(s,fm,{layers:'frame'}),repeat=await render(s,fm,{layers:'frame'});assert(fingerprint(decorated.canvas)===fingerprint(repeat.canvas),'seeded background must be stable');s.framePattern=0;const quiet=await render(s,fm,{layers:'frame'});assert(fingerprint(quiet.canvas)!==fingerprint(decorated.canvas),'ornament intensity has no effect');
+ s.frameCustomColors=true;s.frameFillColor='#172331';s.frameFillColor2='#af5496';const custom=await render(s,fm,{layers:'frame'});assert(fingerprint(custom.canvas)!==fingerprint(quiet.canvas),'two custom colors have no effect');
+ s.blocks[0].text='';s.blocks[1].enabled=false;const backgroundTextOnly=await render(s,fm,{layers:'text'});assert(backgroundTextOnly.canvas.getContext('2d').getImageData(450,175,1,1).data[3]===0,'text-only export contains a themed background');s.frameEnabled=false;const hiddenBackground=await render(s,fm);assert(hiddenBackground.canvas.getContext('2d').getImageData(450,175,1,1).data[3]===0,'hidden frame contains a themed background');
+ log('PASS repeatable ornaments, zero intensity, two custom colors and background-free text-only/hidden-frame output.');
  s.frameEnabled=false;s.blocks[0].text='';s.blocks[1].enabled=false;s.exportLayers='text';let rejected=false;try{await makeExport(s,fm);}catch{rejected=true;}assert(rejected,'empty PNG should be rejected');log('PASS empty export gives a useful error.');status.textContent='ALL CHECKS PASSED';status.className='pass';
  }catch(e){status.textContent='CHECK FAILED';status.className='fail';log('FAIL '+e.message);console.error(e);}finally{document.getElementById('run').disabled=false;}};
