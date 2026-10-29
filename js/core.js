@@ -1,9 +1,10 @@
+import {sanitizePlacement} from './transforms.js';
 import {THEMES,PALETTES,MATERIALS,SHAPES} from './catalog.js';
 import {BACKGROUNDS} from './backgrounds.js';
 export const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 export const clone=v=>JSON.parse(JSON.stringify(v));
 export const uniqueId=()=>globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-export const DEFAULT_STATE={version:1,theme:'princess',palette:'royal',material:'gold',customColor:null,outlineColor:'#62402a',rainbow:false,depth:12,stroke:2,shadow:8,shine:60,direction:'se',frameEnabled:true,frameFillColor:'#ffffff',frameFillColor2:'#c59a4c',frameBackground:'auto',frameCustomColors:false,frameBackgroundVariant:0,frameBackgroundSeed:1234,framePattern:55,frameShape:'ornate',decor:100,inset:16,seed:1234,blockGap:20,fitText:true,width:1800,height:700,exportScale:2,exportLayers:'both',trim:true,padding:28,locks:{font:false,color:false,frame:false,material:false,background:false},blocks:[{text:'მარიამის\nჯადოსნური თავგადასავალი',fontId:'gl-kupiura-bold',fontSize:158,lineMode:'manual',align:'center',letterSpacing:0,lineHeight:1.2,enabled:true},{text:'La aventura mágica de Mariam',fontId:'gl-parizuli-bold',fontSize:76,lineMode:'auto',align:'center',letterSpacing:0,lineHeight:1.2,enabled:false}]};
+export const DEFAULT_STATE={version:1,theme:'princess',palette:'royal',material:'gold',customColor:null,outlineColor:'#62402a',rainbow:false,depth:12,stroke:2,shadow:8,shine:60,direction:'se',frameEnabled:true,frameFillColor:'#ffffff',frameFillColor2:'#c59a4c',frameBackground:'auto',frameCustomColors:false,frameBackgroundVariant:0,frameBackgroundSeed:1234,framePattern:55,frameShape:'ornate',decor:100,inset:16,seed:1234,blockGap:20,fitText:true,width:1800,height:700,exportScale:2,exportLayers:'both',trim:true,padding:28,locks:{font:false,color:false,frame:false,material:false,background:false},blocks:[{text:'მარიამის\nჯადოსნური თავგადასავალი',fontId:'gl-kupiura-bold',fontSize:158,lineMode:'manual',align:'center',letterSpacing:0,lineHeight:1.2,enabled:true,placement:null},{text:'La aventura mágica de Mariam',fontId:'gl-parizuli-bold',fontSize:76,lineMode:'auto',align:'center',letterSpacing:0,lineHeight:1.2,enabled:false,placement:null}]};
 const num=(v,d,min,max)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,min,max):d;
 const bool=(v,d)=>typeof v==='boolean'?v:d;
 const choice=(v,allowed,d)=>allowed.includes(v)?v:d;
@@ -24,7 +25,7 @@ export function sanitizeState(raw={},fontIds=null){
  s.frameBackground=choice(raw.frameBackground,BACKGROUNDS.map(b=>b.id),oldColor?'solid':'auto');
  s.frameBackgroundVariant=Math.floor(s.frameBackgroundVariant);s.frameBackgroundSeed=Math.floor(s.frameBackgroundSeed);
  for(const k of Object.keys(s.locks))s.locks[k]=bool(raw.locks?.[k],false);
- s.blocks=s.blocks.map((def,i)=>{const b=raw.blocks?.[i]||{};return {...def,text:typeof b.text==='string'?b.text.slice(0,500):def.text,fontId:typeof b.fontId==='string'&&(!fontIds||fontIds.has(b.fontId))?b.fontId:def.fontId,fontSize:num(b.fontSize,def.fontSize,40,260),lineMode:choice(b.lineMode,['auto','1','2','3','manual'],'auto'),align:choice(b.align,['center','left','right'],'center'),letterSpacing:num(b.letterSpacing,0,-3,12),lineHeight:num(b.lineHeight,1.2,1,1.8),enabled:i===0?true:bool(b.enabled,false)};});
+ s.blocks=s.blocks.map((def,i)=>{const b=raw.blocks?.[i]||{};return {...def,text:typeof b.text==='string'?b.text.slice(0,500):def.text,fontId:typeof b.fontId==='string'&&(!fontIds||fontIds.has(b.fontId))?b.fontId:def.fontId,fontSize:num(b.fontSize,def.fontSize,40,260),lineMode:choice(b.lineMode,['auto','1','2','3','manual'],'auto'),align:choice(b.align,['center','left','right'],'center'),letterSpacing:num(b.letterSpacing,0,-3,12),lineHeight:num(b.lineHeight,1.2,1,1.8),enabled:i===0?true:bool(b.enabled,false),placement:sanitizePlacement(b.placement)};});
  return s;
 }
 export function splitBalanced(text,count,measure){

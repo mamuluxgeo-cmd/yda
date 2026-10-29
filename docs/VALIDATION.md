@@ -35,3 +35,15 @@ Six illustrated background styles (cosmic, royal, forest, pearl, football and ra
 - The new controls were exercised at 320 and 390 px iframe widths, with no horizontal overflow. The theme thumbnail grid can be expanded on demand to keep background controls easy to reach.
 
 Canva paste and physical mobile devices were not retested for this change.
+
+
+## Direct text manipulation
+
+Each text block can be selected on the preview, moved with mouse/touch, and resized proportionally with corner handles. A manual placement freezes the initial fitted type size and wrapping width, then stores an absolute canvas-relative center and scale. This keeps the other block independent and preserves the manual placement when the surrounding frame changes. The original automatic layout remains available through Reset.
+
+- All 21 Node tests passed. New checks cover old-project migration and serialization of both placements, screen-to-canvas mapping including letterboxing/cover offsets, center snapping, canvas containment, all four anchored corners, pinch scaling and conversion from automatic layout without movement.
+- Full browser rendering checks passed. A newly fixed placement has the same bounds as the automatic one, moving/resizing a block leaves the other block and frame unchanged, lines are preserved, decoded PNG text bounds match the preview, and Reset restores the original geometry.
+- Browser event checks exercise touch dragging, two-pointer pinch, pointer cancellation and Shift+arrow movement. Moving the preview's position on screen between gestures is covered to prevent stale-coordinate bugs after scrolling.
+- Native mouse drag moved the selected text exactly 75 CSS px right and 59 px up. Native corner drag enlarged it from 501.125 to 564.828 CSS px while preserving the opposite corner; Undo restored the previous scale. Keyboard movement changed only the second text block. Both placements were restored unchanged after a page reload.
+- Responsive controls were exercised at 320 and 390 px iframe widths with no horizontal overflow, including block selection and +/center controls. Touch targets are enlarged for coarse pointers. Physical iOS/Android devices were not available; touch events were exercised in the browser harness.
+- Selection outlines, handles and center guides are DOM overlays; the PNG/copy renderer contains only artwork. Export and preview share placement geometry.

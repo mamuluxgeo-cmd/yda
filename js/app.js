@@ -1,3 +1,5 @@
+import {TextEditor} from './editor.js';
+import {placementFromDetail,fitPlacement,movePlacement} from './transforms.js';
 import {BACKGROUNDS,resolveBackground,drawFrameBackground,randomizeBackground,rethemeBackground} from './backgrounds.js';
 import {THEMES,PALETTES,MATERIALS,SHAPES,PRESETS,FONT_PICKS,getTheme,getPalette,iconUrl} from './catalog.js';
 import {DEFAULT_STATE,clone,sanitizeState,exportDimensions,clamp,uniqueId} from './core.js';
@@ -10,6 +12,7 @@ const fonts=new FontManager();
 document.body.setAttribute('aria-busy','true');
 for(const control of document.querySelectorAll('button,input,select,textarea'))control.disabled=true;
 let state=clone(DEFAULT_STATE),activeBlock=0,undo=[],redo=[],lastChange={key:'',time:0},renderTicket=0,raf=0,saveTimer,toastTimer,dirty=false,autoTimer=null,busy=false,galleryKind='fonts',fontObserver,cover=null;
+let textEditor,placementBefore=null,previewVersion=-1,previewDetails=[];
 let favorites=safeRead('yda-favorites-v1',[]);
 if(!Array.isArray(favorites))favorites=[];
 const tabButtons=[...document.querySelectorAll('[data-tab]')];
@@ -18,12 +21,12 @@ function persistCurrent(){if(!dirty)return;const ok=safeWrite('yda-project-v1',s
 function save(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(persistCurrent,450);}
 function updateUndo(){$('undo').disabled=!undo.length;$('redo').disabled=!redo.length;}
 function stopAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=null;$('autoplay').setAttribute('aria-pressed','false');$('autoplay').innerHTML='▷ <span>ავტო</span>';}
-function change(fn,{key='',sync=false,automatic=false}={}){if(!automatic)stopAuto();const now=Date.now();if(key!==lastChange.key||now-lastChange.time>500||!key){undo.push(clone(state));if(undo.length>60)undo.shift();}redo=[];lastChange={key,time:now};fn(state);if(sync)syncControls();updateUndo();queueRender();save();}
+function change(fn,{key='',sync=false,automatic=false}={}){textEditor?.finish();if(!automatic)stopAuto();const now=Date.now();if(key!==lastChange.key||now-lastChange.time>500||!key){undo.push(clone(state));if(undo.length>60)undo.shift();}redo=[];lastChange={key,time:now};fn(state);if(sync)syncControls();updateUndo();queueRender();save();}
 function restore(next){stopAuto();state=sanitizeState(next,fonts.ids());syncControls();queueRender();save();updateUndo();}
-function stepBack(){if(!undo.length)return;redo.push(clone(state));restore(undo.pop());lastChange.key='';}
-function stepForward(){if(!redo.length)return;undo.push(clone(state));restore(redo.pop());lastChange.key='';}
-function queueRender(){renderTicket++;cancelAnimationFrame(raf);const ticket=renderTicket;raf=requestAnimationFrame(()=>updatePreview(ticket));}
-async function updatePreview(ticket){const snap=clone(state);const timer=setTimeout(()=>{if(ticket===renderTicket)$('loading').hidden=false;},180);try{const result=await render(snap,fonts,{scale:Math.min(1,1600/snap.width,1200/snap.height)});if(ticket!==renderTicket)return;const target=$('preview');target.width=result.canvas.width;target.height=result.canvas.height;target.getContext('2d').drawImage(result.canvas,0,0);target.setAttribute('aria-label',snap.blocks.filter(b=>b.enabled).map(b=>b.text).join(' — '));$('previewStatus').textContent=getTheme(snap.theme).name;$('dimensions').textContent=`${snap.width} × ${snap.height} px`;$('fitNote').textContent=result.warnings.join(' · ');$('fitNote').classList.toggle('warning',result.warnings.length>0);if(!cover)$('stage').style.aspectRatio=`${snap.width} / ${snap.height}`;updateExportInfo();}catch(error){if(ticket===renderTicket){$('previewStatus').textContent='ვერ განახლდა';toast(error.message||'სცადე სხვა შრიფტი');}}finally{clearTimeout(timer);if(ticket===renderTicket)$('loading').hidden=true;}}
+function stepBack(){textEditor?.finish();if(!undo.length)return;redo.push(clone(state));restore(undo.pop());lastChange.key='';}
+function stepForward(){textEditor?.finish();if(!redo.length)return;undo.push(clone(state));restore(redo.pop());lastChange.key='';}
+function queueRender(){renderTicket++;$('stage').setAttribute('aria-busy','true');cancelAnimationFrame(raf);const ticket=renderTicket;raf=requestAnimationFrame(()=>updatePreview(ticket));}
+async function updatePreview(ticket){const snap=clone(state);const timer=setTimeout(()=>{if(ticket===renderTicket)$('loading').hidden=false;},180);try{const result=await render(snap,fonts,{scale:Math.min(1,1600/snap.width,1200/snap.height)});if(ticket!==renderTicket)return;const target=$('preview');target.width=result.canvas.width;target.height=result.canvas.height;target.getContext('2d').drawImage(result.canvas,0,0);target.setAttribute('aria-label',snap.blocks.filter(b=>b.enabled).map(b=>b.text).join(' — '));$('previewStatus').textContent=getTheme(snap.theme).name;$('dimensions').textContent=`${snap.width} × ${snap.height} px`;$('fitNote').textContent=result.warnings.join(' · ');$('fitNote').classList.toggle('warning',result.warnings.length>0);if(!cover)$('stage').style.aspectRatio=`${snap.width} / ${snap.height}`;updateExportInfo();previewVersion=ticket;previewDetails=result.details;textEditor.setModel(snap,result.details);textEditor.select(activeBlock,false);syncPlacementControls();}catch(error){if(ticket===renderTicket){$('previewStatus').textContent='ვერ განახლდა';toast(error.message||'სცადე სხვა შრიფტი');}}finally{clearTimeout(timer);if(ticket===renderTicket){$('loading').hidden=true;$('stage').setAttribute('aria-busy','false');}}}
 function populateSelect(id,items){const el=$(id);el.replaceChildren();for(const item of items){const op=document.createElement('option');op.value=item.id;op.textContent=item.name;el.append(op);}}
 function populateFonts(){const select=$('fontSelect');select.replaceChildren();const sources=[...new Set(fonts.fonts.map(f=>f.source))];for(const source of sources){const group=document.createElement('optgroup');group.label=source;for(const f of fonts.fonts.filter(f=>f.source===source)){const op=document.createElement('option');op.value=f.id;op.textContent=f.label;group.append(op);}select.append(group);}$('fontCount').textContent=`${fonts.fonts.length} ვარიანტი`;}
 function syncControls(){const b=state.blocks[activeBlock];$('titleInput').value=b.text;$('charCount').textContent=`${[...b.text].length} / 500`;$('fontSelect').value=b.fontId;$('lineMode').value=b.lineMode;$('align').value=b.align;$('fontSize').value=b.fontSize;$('letterSpacing').value=b.letterSpacing;$('lineHeight').value=b.lineHeight;$('secondaryEnabled').checked=state.blocks[1].enabled;$('secondEnable').hidden=activeBlock!==1;
@@ -35,7 +38,36 @@ function syncControls(){const b=state.blocks[activeBlock];$('titleInput').value=
  syncBackgroundControls();$('outlineColor').value=state.outlineColor;$('customColor').value=state.customColor||getPalette(state.palette).colors[0];
  $('aspect').value=state.width===1800&&state.height===700?'wide':state.width===1600&&state.height===900?'classic':state.width===1200&&state.height===1200?'square':'custom';
  for(const card of document.querySelectorAll('.theme-card'))card.classList.toggle('active',card.dataset.theme===state.theme);
- updateOutputs();updateSwatches();updateExportInfo();
+ updateOutputs();updateSwatches();updateExportInfo();syncPlacementControls();textEditor?.select(activeBlock,false);
+}
+function syncPlacementControls(){
+ const b=state.blocks[activeBlock],exists=b.enabled&&!!b.text.trim();
+ const rendered=previewVersion===renderTicket?previewDetails.find(d=>d.index===activeBlock)?.matrix.scale:null;
+ $('placementScale').value=Math.round((rendered??b.placement?.scale??1)*100)+'%';
+ for(const btn of document.querySelectorAll('[data-select-block]')){btn.setAttribute('aria-pressed',String(+btn.dataset.selectBlock===activeBlock));btn.disabled=+btn.dataset.selectBlock===1&&!state.blocks[1].enabled;}
+ for(const id of ['textSmaller','textLarger','centerText','resetText'])$(id).disabled=!exists;
+}
+function initTextEditor(){
+ textEditor=new TextEditor({stage:$('stage'),canvas:$('preview'),layer:$('textEditor'),isCurrent:()=>previewVersion===renderTicket,
+   onSelect:index=>{activeBlock=index;syncControls();},
+   onStart:()=>{stopAuto();document.body.classList.remove('text-editing');placementBefore=clone(state);},
+   onUpdate:(index,placement)=>{state.blocks[index].placement=placement;queueRender();syncPlacementControls();save();},
+   onEnd:({cancel,changed})=>{
+     const before=placementBefore;placementBefore=null;if(!before)return;
+     if(cancel){state=before;queueRender();save();}
+     else if(changed){undo.push(before);if(undo.length>60)undo.shift();redo=[];lastChange={key:'',time:0};queueRender();save();}
+     syncControls();updateUndo();
+   },onCommand:placementCommand});
+}
+function placementCommand(command,value){
+ textEditor?.finish();const detail=previewDetails.find(d=>d.index===activeBlock);
+ if(command==='reset'){change(s=>s.blocks[activeBlock].placement=null,{sync:true});return;}
+ if(!detail||previewVersion!==renderTicket)return;
+ const start=placementFromDetail(detail,state);let next;
+ if(command==='move')next=movePlacement(detail.baseBounds,start,value,state).placement;
+ else if(command==='center')next=fitPlacement(detail.baseBounds,{...start,x:.5},state).placement;
+ else next=fitPlacement(detail.baseBounds,{...start,scale:start.scale*value},state).placement;
+ change(s=>s.blocks[activeBlock].placement=next,{key:`placement-${command}-${activeBlock}`,sync:true});
 }
 function updateOutputs(){const b=state.blocks[activeBlock];const values={sizeValue:b.fontSize,spacingValue:b.letterSpacing,lineHeightValue:b.lineHeight.toFixed(2),gapValue:state.blockGap,depthValue:state.depth,strokeValue:state.stroke,shadowValue:state.shadow,shineValue:state.shine+'%',decorValue:state.decor+'%',framePatternValue:state.framePattern+'%',insetValue:state.inset,paddingValue:state.padding};for(const[id,value]of Object.entries(values))$(id).value=value;}
 function syncBackgroundControls(){
@@ -78,15 +110,17 @@ async function readProject(file){if(!file)return;stopAuto();try{if(file.size>50*
 async function persistCustomFonts(){try{await assetPut('customFonts',fonts.custom.map(f=>({id:f.id,name:f.originalName,buffer:f.buffer})));}catch{toast('შრიფტი მუშაობს, მაგრამ შენახვა ვერ მოხერხდა. შეინახე პროექტის ფაილი.');}}
 async function loadFontFiles(files){stopAuto();let first=null,added=0;for(const file of files){try{const f=await fonts.addCustom(file);first??=f;added++;}catch(e){toast(e.message);}}if(added){await persistCustomFonts();populateFonts();change(s=>s.blocks[activeBlock].fontId=first.id,{sync:true});toast(`${added} შრიფტი დაემატა. თუ ქართული არ აქვს, გამოჩნდება დამხმარე შრიფტით.`);} }
 async function setCover(data,persist=true){const img=new Image();await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('ფოტო ვერ გაიხსნა'));img.src=data;});cover={data,width:img.naturalWidth,height:img.naturalHeight};const stage=$('stage');stage.className='stage cover';stage.style.backgroundImage=`url("${data}")`;stage.style.aspectRatio=`${cover.width} / ${cover.height}`;$('coverTools').hidden=false;document.querySelectorAll('[data-bg]').forEach(b=>b.classList.remove('active'));positionCover();if(persist){try{await assetPut('cover',cover);}catch{toast('ფოტო ჩანს, მაგრამ ავტომატურად ვერ შეინახა');}}}
-function positionCover(){if(!cover)return;$('preview').style.top=$('coverY').value+'%';$('preview').style.width=$('coverScale').value+'%';safeWrite('yda-cover-position',{y:+$('coverY').value,scale:+$('coverScale').value});}
-async function removeCover(){cover=null;const stage=$('stage');stage.style.backgroundImage='';stage.style.aspectRatio=`${state.width} / ${state.height}`;stage.className='stage checker';$('preview').style.top='';$('preview').style.width='';$('coverTools').hidden=true;document.querySelectorAll('[data-bg]').forEach(b=>b.classList.toggle('active',b.dataset.bg==='checker'));try{await assetDelete('cover');}catch{}}
+function positionCover(){if(!cover)return;$('preview').style.top=$('coverY').value+'%';$('preview').style.width=$('coverScale').value+'%';safeWrite('yda-cover-position',{y:+$('coverY').value,scale:+$('coverScale').value});textEditor?.syncViewport();}
+async function removeCover(){cover=null;const stage=$('stage');stage.style.backgroundImage='';stage.style.aspectRatio=`${state.width} / ${state.height}`;stage.className='stage checker';$('preview').style.top='';$('preview').style.width='';$('coverTools').hidden=true;textEditor?.syncViewport();document.querySelectorAll('[data-bg]').forEach(b=>b.classList.toggle('active',b.dataset.bg==='checker'));try{await assetDelete('cover');}catch{}}
 function bindEvents(){
+ for(const button of document.querySelectorAll('[data-select-block]'))button.onclick=()=>textEditor.select(+button.dataset.selectBlock);
+ $('textSmaller').onclick=()=>placementCommand('scale',1/1.1);$('textLarger').onclick=()=>placementCommand('scale',1.1);$('centerText').onclick=()=>placementCommand('center');$('resetText').onclick=()=>placementCommand('reset');
  document.addEventListener('focusin',e=>{if(e.target.matches('textarea,input[type=number]'))document.body.classList.add('text-editing');});
  document.addEventListener('focusout',()=>setTimeout(()=>{if(!document.activeElement.matches('textarea,input[type=number]'))document.body.classList.remove('text-editing');},0));
  for(const btn of tabButtons)btn.onclick=()=>setTab(btn.dataset.tab);
  $('undo').onclick=stepBack;$('redo').onclick=stepForward;
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();e.shiftKey?stepForward():stepBack();}});
- document.addEventListener('visibilitychange',()=>{if(document.hidden){stopAuto();clearTimeout(saveTimer);persistCurrent();}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){textEditor?.finish();stopAuto();clearTimeout(saveTimer);persistCurrent();}});
  $('titleInput').oninput=()=>{change(s=>s.blocks[activeBlock].text=$('titleInput').value,{key:'text'});$('charCount').textContent=`${[...$('titleInput').value].length} / 500`;};
  document.querySelectorAll('[data-block]').forEach(btn=>btn.onclick=()=>{activeBlock=+btn.dataset.block;if(activeBlock===1&&!state.blocks[1].enabled)change(s=>s.blocks[1].enabled=true,{sync:true});else syncControls();});
  $('secondaryEnabled').onchange=()=>change(s=>s.blocks[1].enabled=$('secondaryEnabled').checked,{sync:true});
@@ -118,5 +152,5 @@ function bindEvents(){
  $('saveProject').onclick=$('projectSave').onclick=saveProject;$('loadProject').onclick=$('projectOpen').onclick=()=>{$('projectDialog').close();$('projectFile').click();};$('projectFile').onchange=async e=>{await readProject(e.target.files[0]);e.target.value='';};
  $('projectMenu').onclick=()=>{stopAuto();$('projectDialog').showModal();};$('closeProject').onclick=()=>$('projectDialog').close();$('projectNew').onclick=()=>{addFavorite();change(()=>{state=clone(DEFAULT_STATE);},{sync:true});activeBlock=0;syncControls();$('projectDialog').close();toast('ახალი წარწერა. წინა ნამუშევარი რჩეულებში შეინახა.');};
 }
-async function init(){try{await fonts.init();try{const custom=await assetGet('customFonts');if(Array.isArray(custom)){for(const f of custom){try{await fonts.addCustom(new File([f.buffer],f.name),f.id);}catch{}}}}catch{}state=sanitizeState(safeRead('yda-project-v1',DEFAULT_STATE),fonts.ids());populateFonts();populateSelect('theme',THEMES);populateSelect('palette',PALETTES);populateSelect('material',MATERIALS);buildThemeGrid();buildBackgroundGrid();bindEvents();syncControls();for(const control of document.querySelectorAll('button,input,select,textarea'))control.disabled=false;document.body.dataset.ready='true';document.body.setAttribute('aria-busy','false');updateUndo();queueRender();try{const savedCover=await assetGet('cover');if(savedCover?.data){const position=safeRead('yda-cover-position',{y:20,scale:85});$('coverY').value=position.y;$('coverScale').value=position.scale;await setCover(savedCover.data,false);}}catch{} }catch(error){$('loading').textContent='ჩატვირთვა ვერ მოხერხდა — განაახლე გვერდი';$('previewStatus').textContent='კავშირის შეცდომა';toast(error.message);}}
+async function init(){try{await fonts.init();try{const custom=await assetGet('customFonts');if(Array.isArray(custom)){for(const f of custom){try{await fonts.addCustom(new File([f.buffer],f.name),f.id);}catch{}}}}catch{}state=sanitizeState(safeRead('yda-project-v1',DEFAULT_STATE),fonts.ids());populateFonts();populateSelect('theme',THEMES);populateSelect('palette',PALETTES);populateSelect('material',MATERIALS);buildThemeGrid();buildBackgroundGrid();initTextEditor();bindEvents();syncControls();for(const control of document.querySelectorAll('button,input,select,textarea'))control.disabled=false;document.body.dataset.ready='true';document.body.setAttribute('aria-busy','false');updateUndo();queueRender();try{const savedCover=await assetGet('cover');if(savedCover?.data){const position=safeRead('yda-cover-position',{y:20,scale:85});$('coverY').value=position.y;$('coverScale').value=position.scale;await setCover(savedCover.data,false);}}catch{} }catch(error){$('loading').textContent='ჩატვირთვა ვერ მოხერხდა — განაახლე გვერდი';$('previewStatus').textContent='კავშირის შეცდომა';toast(error.message);}}
 init();

@@ -1,3 +1,4 @@
+import {fitPlacement} from './transforms.js';
 import {drawFrameBackground} from './backgrounds.js';
 import {getPalette,getMaterial,getTheme,iconUrl} from './catalog.js';
 import {clamp,wrapLines,alphaBounds,mulberry32,exportDimensions} from './core.js';
@@ -41,11 +42,47 @@ function drawText(ctx,s,fonts,b,layout){setFont(ctx,fonts,b,layout.size);const u
  if(s.shine>0){ctx.strokeStyle='#fffbed';ctx.lineWidth=Math.max(.4,u*1.2);ctx.globalAlpha=s.shine/100*.65;glyphs(ctx,text,x,y,layout.tracking,true);ctx.globalAlpha=1;}
  ctx.restore();}
 }
+function textBounds(ctx,s,b,layout){
+ const rects=[];
+ for(const pos of layout.positions){if(!pos.text.trim())continue;let x=pos.x;
+   for(const text of layout.tracking?[...pos.text]:[pos.text]){
+     const m=ctx.measureText(text);if(text.trim())rects.push({x:x-(m.actualBoundingBoxLeft||0),y:pos.y-(m.actualBoundingBoxAscent||layout.size*.78),right:x+(m.actualBoundingBoxRight||m.width),bottom:pos.y+(m.actualBoundingBoxDescent||0)});
+     x+=m.width+layout.tracking;
+   }
+ }
+ const u=Math.min(s.width/1800,s.height/700),depth=s.depth*u,dx=s.direction==='sw'?-.65:s.direction==='s'?0:.65;
+ const margin=(s.stroke+Math.max(3,s.shadow*2)+6)*u;
+ const x=Math.min(...rects.map(r=>r.x))+Math.min(0,dx*depth)-margin;
+ const y=Math.min(...rects.map(r=>r.y))-margin;
+ return {x,y,width:Math.max(1,Math.max(...rects.map(r=>r.right))+Math.max(0,dx*depth)+margin-x),height:Math.max(1,Math.max(...rects.map(r=>r.bottom))+.8*depth+margin-y)};
+}
 export async function render(state,fonts,{scale=1,layers='both'}={}){
- const s=state;const out=canvas(s.width*scale,s.height*scale),ctx=out.getContext('2d',{willReadFrequently:true});ctx.scale(out.width/s.width,out.height/s.height);const blocks=s.blocks.filter(b=>b.enabled&&b.text.trim());await Promise.all(blocks.map(b=>fonts.ensure(b.fontId)));await fonts.ensure(fonts.fallbackId);const warnings=[],details=[];
+ const s=state,out=canvas(s.width*scale,s.height*scale),ctx=out.getContext('2d',{willReadFrequently:true});
+ ctx.scale(out.width/s.width,out.height/s.height);
+ const blocks=s.blocks.map((b,index)=>({b,index})).filter(({b})=>b.enabled&&b.text.trim());
+ await Promise.all(blocks.map(({b})=>fonts.ensure(b.fontId)));await fonts.ensure(fonts.fallbackId);
+ const warnings=[],details=[];
  if(s.frameEnabled&&layers!=='text')await drawFrame(ctx,s);
- const box=contentBox(s),gap=blocks.length>1?Math.min(s.blockGap*box.unit,box.height*.2):0;const estimates=blocks.map(b=>b.fontSize*(b.lineMode==='manual'?b.text.split('\n').length:['1','2','3'].includes(b.lineMode)?+b.lineMode:Math.max(1,Math.ceil(b.text.length/30))));const total=estimates.reduce((a,b)=>a+b,0);let y=box.y;
- for(let i=0;i<blocks.length;i++){const b=blocks[i],height=(box.height-gap)*estimates[i]/total;const blockBox={...box,y,height};const layout=layoutBlock(ctx,b,blockBox,fonts,s);details.push({fontId:b.fontId,size:layout.size,lines:layout.lines,box:blockBox,width:layout.width,height:layout.height});if(layout.size<25*s.width/1800)warnings.push('ტექსტი ძალიან წვრილია — შეამცირე ტექსტი ან დაამატე ხაზი');if(layout.width>box.width+1||layout.height>height+1)warnings.push('ტექსტი ჩარჩოს სცდება — ჩართე ავტომატური ჩატევა');const missing=fonts.missing(b.fontId,b.text);if(missing.length)warnings.push(`სიმბოლოები ${missing.slice(0,8).join(' ')} დამხმარე შრიფტით ჩანს`);if(layers!=='frame')drawText(ctx,s,fonts,b,layout);y+=height+gap;}
+ const box=contentBox(s),gap=blocks.length>1?Math.min(s.blockGap*box.unit,box.height*.2):0;
+ const estimates=blocks.map(({b})=>b.fontSize*(b.lineMode==='manual'?b.text.split('\n').length:['1','2','3'].includes(b.lineMode)?+b.lineMode:Math.max(1,Math.ceil(b.text.length/30))));
+ const total=estimates.reduce((a,b)=>a+b,0);let y=box.y;
+ for(let i=0;i<blocks.length;i++){
+   const {b,index}=blocks[i],height=(box.height-gap)*estimates[i]/total,automaticBox={...box,y,height};
+   const blockBox=b.placement?{x:0,y:0,width:b.placement.wrapWidth*s.width,height:s.height}:automaticBox;
+   const drawBlock=b.placement?{...b,fontSize:b.fontSize*b.placement.fontScale}:b;
+   const layout=layoutBlock(ctx,drawBlock,blockBox,fonts,b.placement?{...s,fitText:false}:s);
+   const baseBounds=textBounds(ctx,s,drawBlock,layout);
+   const positioned=b.placement?fitPlacement(baseBounds,b.placement,s):{bounds:baseBounds,matrix:{scale:1,x:0,y:0}};
+   const fontScale=b.placement?b.placement.fontScale:layout.size/(b.fontSize*s.width/1800);
+   details.push({index,fontId:b.fontId,size:layout.size,lines:layout.lines,box:blockBox,width:layout.width,height:layout.height,baseBounds,bounds:positioned.bounds,matrix:positioned.matrix,fontScale,wrapWidth:blockBox.width/s.width});
+   if(layout.size*positioned.matrix.scale<25*s.width/1800)warnings.push('ტექსტი ძალიან წვრილია — გაზარდე კუთხიდან ან შეამცირე ტექსტი');
+   if(!b.placement&&(layout.width>box.width+1||layout.height>height+1))warnings.push('ტექსტი ჩარჩოს სცდება — ჩართე ავტომატური ჩატევა');
+   const missing=fonts.missing(b.fontId,b.text);if(missing.length)warnings.push(`სიმბოლოები ${missing.slice(0,8).join(' ')} დამხმარე შრიფტით ჩანს`);
+   if(layers!=='frame'){
+     ctx.save();const m=positioned.matrix;ctx.translate(m.x,m.y);ctx.scale(m.scale,m.scale);drawText(ctx,s,fonts,drawBlock,layout);ctx.restore();
+   }
+   y+=height+gap;
+ }
  if(!blocks.length&&layers!=='frame')warnings.push('ჯერ ჩაწერე წარწერა');
  return {canvas:out,warnings:[...new Set(warnings)],details};
 }
